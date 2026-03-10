@@ -1,0 +1,42 @@
+{
+  "name": "spore-reason",
+  "version": "0.1.0",
+  "description": "Simultaneous Parallel Organic Reasoning Engine — bio-inspired parallel reasoning framework",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "spore": "dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "example": "tsx examples/basic.ts",
+    "dev": "tsx src/index.ts",
+    "prepublishOnly": "npm run build"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "keywords": [
+    "reasoning",
+    "ai",
+    "claude",
+    "parallel",
+    "agent",
+    "llm"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/siggithedev/spore"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "dotenv": "^17.3.1",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  },
+  "license": "MIT"
+}
