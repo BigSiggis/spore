@@ -27,7 +27,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/siggithedev/spore"
+    "url": "https://github.com/BigSiggis/spore"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
