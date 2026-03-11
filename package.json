@@ -1,6 +1,6 @@
 {
   "name": "spore-reason",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Bio-inspired parallel reasoning engine modeled on Physarum polycephalum slime mold. Spawns multiple reasoning angles, evolves them through adversarial selection, and synthesizes verified answers.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

@@ -1,6 +1,10 @@
 #!/usr/bin/env node
 import { config } from "dotenv";
-import { join } from "path";
+import { join, dirname } from "path";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 // Load .env from the spore project root, not cwd
 config({ path: join(__dirname, "..", ".env") });
