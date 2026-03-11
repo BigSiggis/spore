@@ -14,8 +14,11 @@ import type { SporeClient } from "./client.js";
 // ── Phase 1: Topology Analysis (pure computation) ──────────────
 function analyzeTopology(
   allSpores: Spore[],
-  clusters: Cluster[]
+  clusters: Cluster[],
+  activeAngles?: readonly Angle[]
 ): TopologyAnalysis {
+  const anglesInPlay = activeAngles ?? ANGLES;
+
   // Which angles survived vs died
   const survivingAngles = new Set<Angle>();
   const generationsSurvived: Record<string, number> = {};
@@ -28,7 +31,7 @@ function analyzeTopology(
     }
   }
 
-  const deadAngles = ANGLES.filter((a) => !survivingAngles.has(a));
+  const deadAngles = anglesInPlay.filter((a) => !survivingAngles.has(a));
 
   // Determine shape
   let shape: TopologyShape;
@@ -163,22 +166,22 @@ async function synthesize(
           .join("\n")
       : "None identified.";
 
-  const systemPrompt = `You synthesize parallel reasoning into a CLEAR, DECISIVE answer.
+  const systemPrompt = `You are SPORE, synthesizing parallel reasoning into a clear answer.
 
-CRITICAL RULES:
-- Lead with a direct answer in the FIRST SENTENCE. No "it depends", no "both have merits". Pick a side.
-- If the evidence leans 60%+ one way, commit to that answer fully.
-- Only present the losing side as "exception cases" — 1-2 sentences max.
-- Keep the total answer under 200 words. Dense, actionable, opinionated.
-- You are a decision engine, not a debate moderator.
+RULES:
+- Lead with a direct answer in the FIRST SENTENCE.
+- For analytical/decision questions: Be decisive. If evidence leans 60%+ one way, commit. No wishy-washy "both have merits."
+- For personal/conversational input (user sharing goals, context, or chatting): Engage naturally. Acknowledge what they said, add value, don't lecture or give unsolicited pushback.
+- Keep the total answer under 200 words. Dense and useful.
+- Match tone to context: casual input → casual response, technical → technical depth.
 
-The topology tells you what survived evolutionary pressure. Dead angles = that perspective couldn't hold up. Use this as strong signal.
+The topology tells you what survived evolutionary pressure. Dead angles = that perspective couldn't hold up. Use this as signal for analytical questions.
 
 Respond with valid JSON:
-{"answer":"decisive answer under 200 words","approachBreakdown":{"analytical":0.0,...},"confidence":0.0-1.0}
+{"answer":"answer under 200 words","approachBreakdown":{"angle_name":0.0,...},"confidence":0.0-1.0}
 
-approachBreakdown: weight each of the 9 angles (sum to ~1.0).
-confidence: how confident you are in the clear answer (0.0-1.0).`;
+approachBreakdown: weight each active angle (sum to ~1.0). Active angles for this run: ${topology.survivingAngles.concat(topology.deadAngles).join(", ")}
+confidence: how confident you are (0.0-1.0).`;
 
   const userPrompt = `QUESTION: ${prompt}
 
@@ -233,10 +236,11 @@ export async function collapse(
   allSpores: Spore[],
   clusters: Cluster[],
   myceliumResults: MyceliumResult[],
-  verbose?: boolean
+  verbose?: boolean,
+  activeAngles?: Angle[]
 ): Promise<CollapseResult> {
   if (verbose) console.log("\n[collapse] Phase 1: Topology analysis...");
-  const topology = analyzeTopology(allSpores, clusters);
+  const topology = analyzeTopology(allSpores, clusters, activeAngles);
 
   if (verbose) {
     console.log(`  Shape: ${topology.shape}`);
@@ -281,7 +285,10 @@ export async function fallbackReason(
   if (verbose) console.log("[fallback] All spores died — single Sonnet call");
 
   const raw = await client.callSonnet(
-    "You are a thoughtful reasoning engine. Give a comprehensive answer.",
+    `You are SPORE (Simultaneous Parallel Organic Reasoning Engine), a bio-inspired parallel reasoning assistant.
+Be direct and helpful. If the user is sharing context, goals, or personal info, engage with it — don't lecture or give unsolicited strategic pushback.
+Match your tone to the input: casual questions get casual answers, technical questions get technical depth.
+Give a comprehensive, well-reasoned answer.`,
     prompt,
     2000,
     0.5

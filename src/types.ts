@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 // ── Approach Angles ──────────────────────────────────────────────
-export const ANGLES = [
+export const GENERAL_ANGLES = [
   "analytical",
   "adversarial",
   "lateral",
@@ -12,6 +12,15 @@ export const ANGLES = [
   "historical-analogy",
   "constraint-relaxation",
 ] as const;
+
+export const CODE_ANGLES = [
+  "security-audit",
+  "bug-detection",
+  "code-architecture",
+  "performance",
+] as const;
+
+export const ANGLES = [...GENERAL_ANGLES, ...CODE_ANGLES] as const;
 
 export type Angle = (typeof ANGLES)[number];
 
@@ -62,12 +71,19 @@ export interface Cluster {
 }
 
 // ── Mycelium (Tier 2) ──────────────────────────────────────────
+export interface CodeReference {
+  file: string;
+  line?: number;
+  issue: string;
+}
+
 export interface MyceliumResult {
   clusterId: number;
   reasoning: string;
   conclusion: string;
   confidence: number;
   angle: Angle;
+  codeReferences?: CodeReference[];
 }
 
 // ── Collapse ────────────────────────────────────────────────────
@@ -112,6 +128,48 @@ export interface PheromoneTrail {
   entries: PheromoneEntry[];
 }
 
+// ── Pipeline Events ─────────────────────────────────────────────
+export type PipelineStage =
+  | "web-search"
+  | "spawn-start"
+  | "spawn-spore"
+  | "spawn-done"
+  | "score-done"
+  | "prune-done"
+  | "cluster-done"
+  | "mycelium-start"
+  | "mycelium-fire"
+  | "mycelium-done"
+  | "collapse-start"
+  | "collapse-topology"
+  | "collapse-done";
+
+export interface PipelineEvent {
+  stage: PipelineStage;
+  generation: number;
+  data?: {
+    spore?: Spore;
+    spores?: Spore[];
+    clusters?: Cluster[];
+    cluster?: Cluster;
+    myceliumResult?: MyceliumResult;
+    myceliumResults?: MyceliumResult[];
+    topology?: TopologyAnalysis;
+    collapseResult?: CollapseResult;
+    totalSpores?: number;
+    aliveCount?: number;
+    deadCount?: number;
+  };
+}
+
+export type PipelineCallback = (event: PipelineEvent) => void;
+
+// ── Code Context ────────────────────────────────────────────────
+export interface CodeContext {
+  files: Array<{ path: string; content: string; language?: string }>;
+  formatted: string; // pre-formatted code context string
+}
+
 // ── Config ──────────────────────────────────────────────────────
 export interface SporeConfig {
   /** Max concurrent API calls */
@@ -134,6 +192,14 @@ export interface SporeConfig {
   verbose: boolean;
   /** Anthropic API key (defaults to env) */
   apiKey?: string;
+  /** Pipeline event callback for visualization */
+  onEvent?: PipelineCallback;
+  /** Tavily API key for web search grounding (defaults to env) */
+  tavilyApiKey?: string;
+  /** Enable web search grounding (defaults to true when tavilyApiKey present) */
+  webGrounding?: boolean;
+  /** Enable approach memory (learning which angles work over time) */
+  approachMemory?: boolean;
 }
 
 export const DEFAULT_CONFIG: SporeConfig = {
@@ -166,5 +232,8 @@ export interface ReasonResult {
 }
 
 export interface SporeEngine {
-  reason: (prompt: string) => Promise<ReasonResult>;
+  reason: (prompt: string, codeContext?: CodeContext) => Promise<ReasonResult>;
 }
+
+// ── Engine V2 (backward compat) ─────────────────────────────────
+export type SporeEngineV2 = SporeEngine;

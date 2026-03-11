@@ -5,6 +5,7 @@ import type {
   Spore,
   Cluster,
   MyceliumResult,
+  PipelineEvent,
 } from "./types.js";
 import { DEFAULT_CONFIG } from "./types.js";
 import { SporeClient } from "./client.js";
@@ -20,8 +21,34 @@ import {
   buildEntries,
   mergeTrails,
 } from "./pheromone.js";
+import { tavilySearch } from "./web.js";
+import {
+  loadApproachMemory,
+  saveApproachMemory,
+  updateApproachMemory,
+  getAngleWeights,
+  classifyTopic,
+} from "./approach-memory.js";
+import type { CodeContext, Angle } from "./types.js";
+import { selectAngles } from "./angle-selector.js";
+import {
+  loadSessionMemory,
+  saveSession,
+  summarizeHistory,
+  generateSessionId,
+} from "./session-memory.js";
 
-export type { ReasonResult, SporeConfig, SporeEngine } from "./types.js";
+export type {
+  ReasonResult,
+  SporeConfig,
+  SporeEngine,
+  SporeEngineV2,
+  PipelineStage,
+  PipelineEvent,
+  PipelineCallback,
+  CodeContext,
+} from "./types.js";
+export { formatCodeContext } from "./code-context.js";
 
 export function createSpore(userConfig?: Partial<SporeConfig>): SporeEngine {
   const config: SporeConfig = { ...DEFAULT_CONFIG, ...userConfig };
@@ -31,10 +58,10 @@ export function createSpore(userConfig?: Partial<SporeConfig>): SporeEngine {
     concurrency: config.concurrency,
   });
 
-  return {
-    reason: async (prompt: string): Promise<ReasonResult> => {
+  const reasonFn = async (prompt: string, codeContext?: CodeContext): Promise<ReasonResult> => {
       const startTime = Date.now();
       const v = config.verbose;
+      const emit = (event: PipelineEvent) => config.onEvent?.(event);
 
       if (v) console.log(`\n🍄 SPORE — reasoning on: "${prompt.slice(0, 80)}..."\n`);
 
@@ -48,6 +75,54 @@ export function createSpore(userConfig?: Partial<SporeConfig>): SporeEngine {
         console.log(
           `[pheromone] Loaded ${existingTrail.entries.length} trail entries`
         );
+      }
+
+      // Load approach memory and classify topic
+      const useApproachMemory = config.approachMemory !== false;
+      const approachMemory = useApproachMemory
+        ? loadApproachMemory(config.trailDir)
+        : null;
+      let topicTag: string | undefined;
+      let angleWeights: Record<string, number> | undefined;
+
+      if (approachMemory) {
+        topicTag = await classifyTopic(client, prompt);
+        angleWeights = getAngleWeights(approachMemory, topicTag);
+        if (v) {
+          console.log(`[approach-memory] Topic: ${topicTag}`);
+          const topAngles = Object.entries(angleWeights)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 3)
+            .map(([a, w]) => `${a}=${w.toFixed(2)}`);
+          console.log(`[approach-memory] Top weights: ${topAngles.join(", ")}`);
+        }
+      }
+
+      const codeContextStr = codeContext?.formatted;
+
+      // Select angles based on code context
+      const hasCode = !!codeContextStr;
+      const angleSelection = selectAngles(hasCode, angleWeights, topicTag);
+      const activeAngles = angleSelection.angles;
+      if (v) console.log(`[angles] ${angleSelection.reason}`);
+
+      // ── Web Search Grounding ────────────────────────────
+      const tavilyKey = config.tavilyApiKey;
+      const useWeb = tavilyKey && config.webGrounding !== false;
+      let groundingContext: string | null = null;
+
+      if (useWeb) {
+        emit({ stage: "web-search", generation: 0 });
+        if (v) console.log(`[web] Searching for grounding...`);
+        groundingContext = await tavilySearch(prompt, tavilyKey);
+        if (v) {
+          if (groundingContext) {
+            const count = groundingContext.split("\n").length;
+            console.log(`[web] Found ${count} results`);
+          } else {
+            console.log(`[web] No results (continuing ungrounded)`);
+          }
+        }
       }
 
       let allSpores: Spore[] = [];
@@ -67,6 +142,8 @@ export function createSpore(userConfig?: Partial<SporeConfig>): SporeEngine {
                 (s) => s.alive && s.generation === generation - 1
               );
 
+        emit({ stage: "spawn-start", generation, data: { totalSpores: generation === 0 ? 9 * config.sporesPerAngle : parents?.filter(s => s.alive).length ?? 0 } });
+
         const newSpores = await spawnGeneration(
           client,
           prompt,
@@ -74,15 +151,22 @@ export function createSpore(userConfig?: Partial<SporeConfig>): SporeEngine {
           config.sporesPerAngle,
           parents,
           existingTrail?.entries,
-          v
+          v,
+          (spore) => emit({ stage: "spawn-spore", generation, data: { spore } }),
+          groundingContext ?? undefined,
+          codeContextStr,
+          angleWeights,
+          activeAngles
         );
 
         allSpores.push(...newSpores);
+        emit({ stage: "spawn-done", generation, data: { spores: newSpores } });
 
         // Score (batch Haiku call)
         if (v) console.log(`  [scoring] Scoring ${newSpores.length} spores...`);
-        const scores = await scoreSpores(client, newSpores, prompt);
+        const scores = await scoreSpores(client, newSpores, prompt, hasCode);
         applyScores(newSpores, scores, config.pruneThreshold);
+        emit({ stage: "score-done", generation, data: { spores: newSpores } });
 
         const alive = newSpores.filter((s) => s.alive);
         const dead = newSpores.filter((s) => !s.alive);
@@ -91,41 +175,24 @@ export function createSpore(userConfig?: Partial<SporeConfig>): SporeEngine {
             `  [pruning] ${alive.length} alive, ${dead.length} pruned`
           );
         }
+        emit({ stage: "prune-done", generation, data: { spores: newSpores, aliveCount: alive.length, deadCount: dead.length } });
 
-        // Edge case: all spores die
+        // Edge case: all spores die despite minSurvivors guarantee
+        // (only possible if scoring returned no results at all)
         if (alive.length === 0) {
-          if (v) console.log("  ⚠️ All spores died!");
-
-          // Lower threshold once and retry scoring
-          if (generation === 0) {
-            if (v) console.log("  Lowering threshold and retrying...");
-            const lowerThreshold = config.pruneThreshold * 0.5;
-            applyScores(newSpores, scores, lowerThreshold);
-            // Revive everything with the lower threshold
-            for (const s of newSpores) {
-              const result = scores.get(s.id);
-              if (result && result.composite >= lowerThreshold) {
-                s.alive = true;
-              }
-            }
-
-            const revivedAlive = newSpores.filter((s) => s.alive);
-            if (revivedAlive.length === 0) {
-              // Total failure — fallback to single Sonnet
-              const result = await fallbackReason(client, prompt, v);
-              return {
-                ...result,
-                meta: {
-                  generations: generation + 1,
-                  totalSpores: allSpores.length,
-                  survivingSpores: 0,
-                  myceliumCalls: 0,
-                  costEstimate: client.costTracker.estimate(),
-                  wallClockMs: Date.now() - startTime,
-                },
-              };
-            }
-          }
+          if (v) console.log("  ⚠️ All spores died — fallback");
+          const result = await fallbackReason(client, prompt, v);
+          return {
+            ...result,
+            meta: {
+              generations: generation + 1,
+              totalSpores: allSpores.length,
+              survivingSpores: 0,
+              myceliumCalls: 0,
+              costEstimate: client.costTracker.estimate(),
+              wallClockMs: Date.now() - startTime,
+            },
+          };
         }
 
         // Cluster
@@ -134,17 +201,23 @@ export function createSpore(userConfig?: Partial<SporeConfig>): SporeEngine {
           config.clusterSimilarity
         );
         if (v) console.log(`  [clustering] ${clusters.length} cluster(s)`);
+        emit({ stage: "cluster-done", generation, data: { clusters, spores: allSpores.filter(s => s.alive) } });
 
         // Fire mycelium on dense clusters
+        emit({ stage: "mycelium-start", generation, data: { clusters } });
         const genMycelium = await fireMycelium(
           client,
           clusters,
           allSpores,
           prompt,
           config.densityThreshold,
-          v
+          v,
+          (cluster, result) => emit({ stage: "mycelium-fire", generation, data: { cluster, myceliumResult: result } }),
+          useWeb ? tavilyKey : undefined,
+          hasCode
         );
         myceliumResults.push(...genMycelium);
+        emit({ stage: "mycelium-done", generation, data: { myceliumResults: genMycelium } });
 
         // Early termination check
         if (
@@ -163,6 +236,7 @@ export function createSpore(userConfig?: Partial<SporeConfig>): SporeEngine {
 
       // ── Collapse ─────────────────────────────────────────
       if (v) console.log("\n── Collapse ──");
+      emit({ stage: "collapse-start", generation });
 
       const collapseResult = await collapse(
         client,
@@ -170,8 +244,12 @@ export function createSpore(userConfig?: Partial<SporeConfig>): SporeEngine {
         allSpores,
         clusters,
         myceliumResults,
-        v
+        v,
+        activeAngles
       );
+
+      emit({ stage: "collapse-topology", generation, data: { topology: collapseResult.topology, collapseResult } });
+      emit({ stage: "collapse-done", generation, data: { collapseResult } });
 
       // ── Pheromone persistence ────────────────────────────
       if (config.trails) {
@@ -180,6 +258,52 @@ export function createSpore(userConfig?: Partial<SporeConfig>): SporeEngine {
         const merged = mergeTrails(existingTrail, promptHash, entries);
         saveTrail(config.trailDir, promptHash, merged);
         if (v) console.log(`\n[pheromone] Saved ${entries.length} trail entries`);
+      }
+
+      // ── Approach memory persistence ────────────────────
+      if (approachMemory) {
+        const survivors = allSpores.filter((s) => s.alive);
+        const angleScores: Record<string, number> = {};
+        for (const s of allSpores) {
+          if (!angleScores[s.angle] || s.score > angleScores[s.angle]) {
+            angleScores[s.angle] = s.score;
+          }
+        }
+        updateApproachMemory(approachMemory, {
+          survivingAngles: [...new Set(survivors.map((s) => s.angle))],
+          angleScores,
+          topicTag,
+          confidence: collapseResult.confidence,
+          contradictions: collapseResult.contradictions,
+        });
+        saveApproachMemory(config.trailDir, approachMemory);
+        if (v) console.log(`[approach-memory] Updated and saved`);
+      }
+
+      // ── Session memory persistence ─────────────────────
+      if (config.trails) {
+        try {
+          const sessionMemory = loadSessionMemory(config.trailDir);
+          const summary = await summarizeHistory(client, [
+            { role: "user" as const, content: prompt },
+            { role: "assistant" as const, content: collapseResult.answer },
+          ]);
+          saveSession(config.trailDir, sessionMemory, {
+            sessionId: generateSessionId(),
+            topic: summary.topic,
+            summary: summary.summary,
+            conclusion: summary.conclusion,
+            messages: [
+              { role: "user", content: prompt },
+              { role: "assistant", content: collapseResult.answer },
+            ],
+            timestamp: Date.now(),
+            decayWeight: 1.0,
+          });
+          if (v) console.log(`[session-memory] Saved: ${summary.topic}`);
+        } catch {
+          // Silent fail — session memory is best-effort
+        }
       }
 
       const survivingSpores = allSpores.filter((s) => s.alive);
@@ -207,6 +331,9 @@ export function createSpore(userConfig?: Partial<SporeConfig>): SporeEngine {
           wallClockMs: Date.now() - startTime,
         },
       };
-    },
+  };
+
+  return {
+    reason: reasonFn,
   };
 }

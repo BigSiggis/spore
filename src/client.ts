@@ -108,6 +108,35 @@ export class SporeClient {
     }
   }
 
+  async callHaikuWithHistory(
+    system: string,
+    messages: Array<{ role: "user" | "assistant"; content: string }>,
+    maxTokens = 500,
+    temperature = 0.3
+  ): Promise<string> {
+    await this.semaphore.acquire();
+    try {
+      const response = await this.client.messages.create({
+        model: "claude-haiku-4-5",
+        max_tokens: maxTokens,
+        temperature,
+        system,
+        messages,
+      });
+
+      this.costTracker.record({
+        inputTokens: response.usage.input_tokens,
+        outputTokens: response.usage.output_tokens,
+        model: "claude-haiku-4-5",
+      });
+
+      const text = response.content.find((b) => b.type === "text");
+      return text?.text ?? "";
+    } finally {
+      this.semaphore.release();
+    }
+  }
+
   async callSonnet(
     system: string,
     prompt: string,

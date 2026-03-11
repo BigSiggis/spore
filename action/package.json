@@ -1,0 +1,13 @@
+{
+  "name": "spore-action",
+  "version": "0.3.0",
+  "private": true,
+  "type": "module",
+  "main": "index.js",
+  "dependencies": {
+    "@actions/core": "^1.10.0",
+    "@actions/github": "^6.0.0",
+    "minimatch": "^9.0.0",
+    "spore-reason": "file:.."
+  }
+}

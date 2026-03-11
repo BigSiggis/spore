@@ -1,0 +1,41 @@
+name: 'SPORE Code Review'
+description: 'Bio-inspired multi-angle code review powered by Physarum polycephalum reasoning. Analyzes PRs for security, bugs, architecture, and performance.'
+branding:
+  icon: 'zap'
+  color: 'orange'
+
+inputs:
+  anthropic_api_key:
+    description: 'Anthropic API key'
+    required: true
+  tavily_api_key:
+    description: 'Tavily API key for web grounding (optional)'
+    required: false
+  generations:
+    description: 'Number of evolutionary generations (default 2)'
+    required: false
+    default: '2'
+  file_pattern:
+    description: 'Glob pattern for files to review (default: all changed files)'
+    required: false
+    default: ''
+  max_files:
+    description: 'Max files to include in review (default 10)'
+    required: false
+    default: '10'
+  comment_on_pr:
+    description: 'Post results as PR comment (default true)'
+    required: false
+    default: 'true'
+
+outputs:
+  answer:
+    description: 'SPORE analysis result'
+  confidence:
+    description: 'Confidence score (0-1)'
+  topology:
+    description: 'Reasoning topology shape'
+
+runs:
+  using: 'node20'
+  main: 'index.js'

@@ -1,11 +1,30 @@
 {
   "name": "spore-reason",
-  "version": "0.1.0",
-  "description": "Simultaneous Parallel Organic Reasoning Engine — bio-inspired parallel reasoning framework",
+  "version": "0.3.0",
+  "description": "Bio-inspired parallel reasoning engine modeled on Physarum polycephalum slime mold. Spawns multiple reasoning angles, evolves them through adversarial selection, and synthesizes verified answers.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "type": "module",
   "bin": {
     "spore": "dist/cli.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./code-context": {
+      "types": "./dist/code-context.d.ts",
+      "import": "./dist/code-context.js"
+    },
+    "./approach-memory": {
+      "types": "./dist/approach-memory.d.ts",
+      "import": "./dist/approach-memory.js"
+    },
+    "./session-memory": {
+      "types": "./dist/session-memory.d.ts",
+      "import": "./dist/session-memory.js"
+    }
   },
   "scripts": {
     "build": "tsc",
@@ -15,20 +34,35 @@
   },
   "files": [
     "dist",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "keywords": [
     "reasoning",
     "ai",
     "claude",
+    "anthropic",
     "parallel",
     "agent",
-    "llm"
+    "llm",
+    "slime-mold",
+    "physarum",
+    "bio-inspired",
+    "code-review",
+    "security-audit",
+    "multi-angle",
+    "evolutionary",
+    "mcp"
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/BigSiggis/spore"
+    "url": "https://github.com/agentek-ai/spore"
   },
+  "homepage": "https://github.com/agentek-ai/spore#readme",
+  "bugs": {
+    "url": "https://github.com/agentek-ai/spore/issues"
+  },
+  "author": "Agentek",
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
     "dotenv": "^17.3.1",
@@ -37,6 +71,9 @@
   "devDependencies": {
     "tsx": "^4.19.0",
     "typescript": "^5.7.0"
+  },
+  "engines": {
+    "node": ">=18"
   },
   "license": "MIT"
 }

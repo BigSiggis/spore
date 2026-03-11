@@ -5,9 +5,9 @@ import { join } from "path";
 // Load .env from the spore project root, not cwd
 config({ path: join(__dirname, "..", ".env") });
 
-import { createInterface } from "readline";
 import { createSpore } from "./index.js";
 import type { ReasonResult } from "./types.js";
+import { SporeVisualizer } from "./visualizer.js";
 
 // ── ANSI Colors ────────────────────────────────────────────────
 const c = {
@@ -33,11 +33,8 @@ function sleep(ms: number): Promise<void> {
 }
 
 // ── Animated Splash ────────────────────────────────────────────
-// ── Dance Frames ───────────────────────────────────────────────
-// Toadstool mushroom character — wide symmetric cap, white spots, cute face
-
 const DANCE_FRAMES = [
-  // Frame 0: standing center, arms down, facing forward
+  // Frame 0: standing center
   [
     `${c.cap}       ▄▄▄████████████▄▄▄`,
     `${c.cap}     ██${c.white}●${c.cap}████${c.white}●${c.cap}████${c.white}●${c.cap}████${c.white}●${c.cap}██`,
@@ -53,7 +50,7 @@ const DANCE_FRAMES = [
     `${c.stem}           ${c.spore}╰─┬─╯`,
     `${c.mycelium}        ╌╌╌─┴───┴─╌╌╌`,
   ],
-  // Frame 1: whole body shifted right, looking right
+  // Frame 1: shifted right
   [
     `${c.cap}          ▄▄▄████████████▄▄▄`,
     `${c.cap}        ██${c.white}●${c.cap}████${c.white}●${c.cap}████${c.white}●${c.cap}████${c.white}●${c.cap}██`,
@@ -69,7 +66,7 @@ const DANCE_FRAMES = [
     `${c.stem}              ${c.spore}╰─┬─╯`,
     `${c.mycelium}           ╌╌╌─┴───┴─╌╌╌`,
   ],
-  // Frame 2: whole body shifted left, looking left
+  // Frame 2: shifted left
   [
     `${c.cap}    ▄▄▄████████████▄▄▄`,
     `${c.cap}  ██${c.white}●${c.cap}████${c.white}●${c.cap}████${c.white}●${c.cap}████${c.white}●${c.cap}██`,
@@ -85,7 +82,7 @@ const DANCE_FRAMES = [
     `${c.stem}        ${c.spore}╰─┬─╯`,
     `${c.mycelium}     ╌╌╌─┴───┴─╌╌╌`,
   ],
-  // Frame 3: center, facing forward, arms down (settle frame)
+  // Frame 3: center settle
   [
     `${c.cap}       ▄▄▄████████████▄▄▄`,
     `${c.cap}     ██${c.white}●${c.cap}████${c.white}●${c.cap}████${c.white}●${c.cap}████${c.white}●${c.cap}██`,
@@ -116,12 +113,9 @@ async function animateSplash(): Promise<void> {
   console.clear();
   process.stdout.write("\x1b[?25l"); // hide cursor
 
-  // Dance animation — look around then settle
-  // right, center, left, center, right, center, left, settle forward
   const frameOrder = [1, 0, 2, 0, 1, 0, 2, 3];
-  const frameHeight = DANCE_FRAMES[0].length + 1; // +1 for the initial newline
+  const frameHeight = DANCE_FRAMES[0].length + 1;
 
-  // Draw initial frame to establish lines
   console.log();
   for (const line of DANCE_FRAMES[0]) {
     console.log(line + c.reset);
@@ -129,25 +123,21 @@ async function animateSplash(): Promise<void> {
 
   for (const fi of frameOrder) {
     await sleep(220);
-    // Move cursor up to redraw in place
     process.stdout.write(`\x1b[${frameHeight}A`);
     console.log();
     for (const line of DANCE_FRAMES[fi]) {
-      // Clear line then draw
       process.stdout.write("\x1b[K");
       console.log(line + c.reset);
     }
   }
   console.log();
 
-  // Flash in the title
   for (const line of TITLE) {
     console.log(line + c.reset);
     await sleep(40);
   }
   console.log();
 
-  // Tagline typing effect
   const tagline = "  Simultaneous Parallel Organic Reasoning Engine";
   process.stdout.write(`${c.dim}${c.stem}`);
   for (const ch of tagline) {
@@ -156,9 +146,8 @@ async function animateSplash(): Promise<void> {
   }
   console.log(c.reset);
 
-  // Version + info
-  console.log(`${c.gray}  v0.1.0 — 9 angles · evolutionary selection · density-triggered reasoning${c.reset}`);
-  console.log(`${c.gray}  Type a question, or ${c.white}/help${c.gray} for commands, ${c.white}/quit${c.gray} to exit${c.reset}`);
+  console.log(`${c.gray}  v0.3.0 — multi-angle reasoning · code analysis · approach memory${c.reset}`);
+  console.log(`${c.gray}  Pass a question as argument, or use as MCP server${c.reset}`);
   console.log();
 
   process.stdout.write("\x1b[?25h"); // show cursor
@@ -198,27 +187,15 @@ class Spinner {
   }
 }
 
-// ── Result Display ─────────────────────────────────────────────
-function displayResult(result: ReasonResult): void {
-  // Answer box
+// ── Full SPORE Result Display ──────────────────────────────────
+function displayFullResult(result: ReasonResult): void {
   console.log();
   console.log(`${c.glow}${c.bold}  ┌${"─".repeat(60)}┐${c.reset}`);
-  console.log(`${c.glow}${c.bold}  │${c.reset}${c.bold}  ANSWER${" ".repeat(53)}${c.glow}│${c.reset}`);
+  console.log(`${c.glow}${c.bold}  │${c.reset}${c.bold}  DEEP REASONING${" ".repeat(45)}${c.glow}│${c.reset}`);
   console.log(`${c.glow}${c.bold}  └${"─".repeat(60)}┘${c.reset}`);
   console.log();
 
-  // Word-wrap the answer
-  const words = result.answer.split(" ");
-  let line = "  ";
-  for (const word of words) {
-    if (line.length + word.length > 76) {
-      console.log(`${c.white}${line}${c.reset}`);
-      line = "  " + word + " ";
-    } else {
-      line += word + " ";
-    }
-  }
-  if (line.trim()) console.log(`${c.white}${line}${c.reset}`);
+  wordWrap(result.answer);
 
   // Confidence bar
   console.log();
@@ -272,15 +249,18 @@ function displayResult(result: ReasonResult): void {
   console.log();
 }
 
-// ── Commands ───────────────────────────────────────────────────
-function showHelp(): void {
-  console.log();
-  console.log(`${c.glow}${c.bold}  Commands:${c.reset}`);
-  console.log(`${c.white}    /help${c.gray}          Show this help${c.reset}`);
-  console.log(`${c.white}    /verbose${c.gray}       Toggle verbose reasoning trace${c.reset}`);
-  console.log(`${c.white}    /config${c.gray}        Show current settings${c.reset}`);
-  console.log(`${c.white}    /quit${c.gray}          Exit SPORE${c.reset}`);
-  console.log();
+function wordWrap(text: string): void {
+  const words = text.split(" ");
+  let line = "  ";
+  for (const word of words) {
+    if (line.length + word.length > 76) {
+      console.log(`${c.white}${line}${c.reset}`);
+      line = "  " + word + " ";
+    } else {
+      line += word + " ";
+    }
+  }
+  if (line.trim()) console.log(`${c.white}${line}${c.reset}`);
 }
 
 // ── Parse CLI Args ─────────────────────────────────────────────
@@ -306,115 +286,69 @@ for (let i = 0; i < args.length; i++) {
 // ── Main ───────────────────────────────────────────────────────
 let verbose = flags["verbose"] === "true";
 
-const sporeConfig = {
+const sporeConfig: Partial<import("./types.js").SporeConfig> = {
   verbose: false, // we handle display ourselves
-  generations: flags["generations"] ? parseInt(flags["generations"]) : undefined,
-  sporesPerAngle: flags["spores"] ? parseInt(flags["spores"]) : undefined,
   trails: flags["no-trails"] !== "true",
+  tavilyApiKey: process.env.TAVILY_API_KEY,
+  webGrounding: flags["no-web"] !== "true",
 };
+// Only set overrides if flags are provided — undefined values would clobber defaults
+if (flags["generations"]) sporeConfig.generations = parseInt(flags["generations"]);
+if (flags["spores"]) sporeConfig.sporesPerAngle = parseInt(flags["spores"]);
 
-// Quiet single-shot mode
+// Quiet single-shot mode (always uses full SPORE)
 if (flags["quiet"] === "true" && positional.length > 0) {
   const spore = createSpore(sporeConfig);
   spore.reason(positional.join(" ")).then((result) => {
     console.log(result.answer);
-  }).catch((err) => {
+  }).catch((err: any) => {
     console.error(err.message ?? err);
     process.exit(1);
   });
 } else if (positional.length > 0) {
-  // Single-shot with display
-  const spore = createSpore({ ...sporeConfig, verbose });
-
+  // Single-shot with display (full SPORE)
   (async () => {
     await animateSplash();
     const question = positional.join(" ");
     console.log(`${c.dim}  ▸ ${c.white}${question}${c.reset}\n`);
 
-    const spinner = new Spinner("Spawning spores...");
-    spinner.start();
-
-    // Run with a simple progress callback via verbose
-    const result = await spore.reason(question);
-    spinner.stop(`Reasoning complete`);
-    displayResult(result);
-  })().catch((err) => {
+    if (verbose) {
+      // Verbose mode: raw logs, no viz
+      const spore = createSpore({ ...sporeConfig, verbose: true });
+      const spinner = new Spinner("Spawning spores...");
+      spinner.start();
+      const result = await spore.reason(question);
+      spinner.stop("Reasoning complete");
+      displayFullResult(result);
+    } else {
+      // Visualization mode
+      const viz = new SporeVisualizer();
+      const spore = createSpore({ ...sporeConfig, verbose: false, onEvent: viz.createCallback() });
+      viz.start();
+      const result = await spore.reason(question);
+      viz.stop();
+      displayFullResult(result);
+    }
+  })().catch((err: any) => {
+    process.stdout.write("\x1b[?25h"); // ensure cursor visible on error
     console.error(`\n${c.red}  Error: ${err.message ?? err}${c.reset}`);
     process.exit(1);
   });
 } else {
-  // ── Interactive REPL Mode ──────────────────────────────────
+  // No question provided — show usage
   (async () => {
     await animateSplash();
-
-    const rl = createInterface({
-      input: process.stdin,
-      output: process.stdout,
-      prompt: `${c.glow}  🍄 ${c.reset}`,
-    });
-
-    const spore = createSpore(sporeConfig);
-
-    rl.prompt();
-
-    rl.on("line", async (input: string) => {
-      const trimmed = input.trim();
-      if (!trimmed) {
-        rl.prompt();
-        return;
-      }
-
-      // Handle commands
-      if (trimmed === "/quit" || trimmed === "/exit" || trimmed === "/q") {
-        console.log(`\n${c.mycelium}  The mycelium remembers. Until next time.${c.reset}\n`);
-        process.exit(0);
-      }
-
-      if (trimmed === "/help") {
-        showHelp();
-        rl.prompt();
-        return;
-      }
-
-      if (trimmed === "/verbose") {
-        verbose = !verbose;
-        sporeConfig.verbose = verbose;
-        console.log(`${c.glow}  verbose: ${verbose ? "on" : "off"}${c.reset}`);
-        rl.prompt();
-        return;
-      }
-
-      if (trimmed === "/config") {
-        console.log();
-        console.log(`${c.dim}  generations:    ${c.white}${sporeConfig.generations ?? 2}${c.reset}`);
-        console.log(`${c.dim}  sporesPerAngle: ${c.white}${sporeConfig.sporesPerAngle ?? 1}${c.reset}`);
-        console.log(`${c.dim}  trails:         ${c.white}${sporeConfig.trails}${c.reset}`);
-        console.log(`${c.dim}  verbose:        ${c.white}${verbose}${c.reset}`);
-        console.log();
-        rl.prompt();
-        return;
-      }
-
-      // Reason on the input
-      const spinner = new Spinner("Spawning spores...");
-      spinner.start();
-
-      try {
-        const sporeInstance = createSpore({ ...sporeConfig, verbose });
-        const result = await sporeInstance.reason(trimmed);
-        spinner.stop("Reasoning complete");
-        displayResult(result);
-      } catch (err: any) {
-        spinner.stop();
-        console.log(`${c.red}  Error: ${err.message ?? err}${c.reset}\n`);
-      }
-
-      rl.prompt();
-    });
-
-    rl.on("close", () => {
-      console.log(`\n${c.mycelium}  The mycelium remembers. Until next time.${c.reset}\n`);
-      process.exit(0);
-    });
+    console.log();
+    console.log(`${c.glow}${c.bold}  Usage:${c.reset}`);
+    console.log(`${c.white}    spore "your question here"${c.gray}         Full reasoning with visualization${c.reset}`);
+    console.log(`${c.white}    spore --quiet "your question"${c.gray}      Just the answer${c.reset}`);
+    console.log(`${c.white}    spore --verbose "your question"${c.gray}    Show reasoning trace${c.reset}`);
+    console.log();
+    console.log(`${c.dim}  Options:${c.reset}`);
+    console.log(`${c.white}    --generations N${c.gray}    Number of evolutionary generations (default 2)${c.reset}`);
+    console.log(`${c.white}    --spores N${c.gray}         Spores per angle (default 1)${c.reset}`);
+    console.log(`${c.white}    --no-trails${c.gray}        Disable persistence${c.reset}`);
+    console.log(`${c.white}    --no-web${c.gray}           Disable web grounding${c.reset}`);
+    console.log();
   })();
 }

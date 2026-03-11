@@ -1,0 +1,11 @@
+{
+  "name": "spore-mcp",
+  "version": "0.1.0",
+  "description": "MCP server for SPORE reasoning engine",
+  "type": "module",
+  "main": "index.js",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "zod": "^3.25.0"
+  }
+}

@@ -29,15 +29,33 @@ const ANGLE_PROMPTS: Record<Angle, string> = {
     "What historical precedents illuminate this? What happened in similar situations?",
   "constraint-relaxation":
     "What if we removed the biggest constraint? What becomes possible, and does that reveal the real problem?",
+  "security-audit":
+    "Analyze this for vulnerabilities: injection points, auth bypasses, data exposure, unsafe deserialization, missing input validation. What can an attacker exploit?",
+  "bug-detection":
+    "Hunt for bugs: edge cases, off-by-one errors, null/undefined access, race conditions, resource leaks, incorrect error handling. What breaks under stress?",
+  "code-architecture":
+    "Evaluate the architecture: separation of concerns, coupling between components, extensibility, maintenance burden, naming clarity. What's the structural debt?",
+  performance:
+    "Find performance issues: N+1 queries, unnecessary allocations, blocking operations, missing caching, unoptimized data structures. What's slow and why?",
 };
 
 function buildSporePrompt(
   angle: Angle,
   prompt: string,
   parentLean?: string,
-  pheromoneBias?: string
+  pheromoneBias?: string,
+  groundingContext?: string,
+  codeContext?: string
 ): string {
   let p = `QUESTION: ${prompt}\n\nAPPROACH (${angle}): ${ANGLE_PROMPTS[angle]}`;
+
+  if (codeContext) {
+    p += `\n\nCODE CONTEXT (analyze this code — focus on your approach angle):\n${codeContext}`;
+  }
+
+  if (groundingContext) {
+    p += `\n\nWEB EVIDENCE (factual grounding — cite where relevant):\n${groundingContext}`;
+  }
 
   if (parentLean) {
     p += `\n\nBuild on this prior insight: "${parentLean}"`;
@@ -75,7 +93,7 @@ function parseSporeResponse(raw: string): SporeResponse {
   }
 }
 
-// Spawn gen-0 spores: 2 probes per angle x 9 angles = 18 parallel calls
+// Spawn gen-0 spores: probes across selected angles
 export async function spawnGeneration(
   client: SporeClient,
   prompt: string,
@@ -83,13 +101,28 @@ export async function spawnGeneration(
   sporesPerAngle: number,
   parents?: Spore[],
   pheromones?: PheromoneEntry[],
-  verbose?: boolean
+  verbose?: boolean,
+  onSpore?: (spore: Spore) => void,
+  groundingContext?: string,
+  codeContext?: string,
+  angleWeights?: Record<string, number>,
+  activeAngles?: Angle[]
 ): Promise<Spore[]> {
   const tasks: Promise<Spore>[] = [];
+  const anglesToUse = activeAngles ?? ANGLES;
 
   if (generation === 0 || !parents) {
-    // Gen-0: fresh probes across all angles
-    for (const angle of ANGLES) {
+    // Gen-0: fresh probes across selected angles
+    for (const angle of anglesToUse) {
+      // Determine spore count from angle weights
+      let count = sporesPerAngle;
+      if (angleWeights) {
+        const w = angleWeights[angle] ?? 1.0;
+        if (w > 1.2) count = 2;
+        else if (w < 0.5) count = 0; // skip this angle in gen-0
+        else count = sporesPerAngle;
+      }
+
       // Build pheromone bias for this angle
       const anglePheromones = pheromones?.filter((p) => p.angle === angle);
       const biasStr =
@@ -101,13 +134,13 @@ export async function spawnGeneration(
               .join("; ")
           : undefined;
 
-      for (let i = 0; i < sporesPerAngle; i++) {
+      for (let i = 0; i < count; i++) {
         const id = makeId(generation, angle);
         tasks.push(
           client
             .callHaiku(
               "You are a reasoning probe. Respond ONLY with the requested JSON format.",
-              buildSporePrompt(angle, prompt, undefined, biasStr)
+              buildSporePrompt(angle, prompt, undefined, biasStr, groundingContext, codeContext)
             )
             .then((raw) => {
               const resp = parseSporeResponse(raw);
@@ -116,7 +149,7 @@ export async function spawnGeneration(
                   `  [gen${generation}] ${angle}: "${resp.lean.slice(0, 80)}..."`
                 );
               }
-              return {
+              const spore: Spore = {
                 id,
                 angle,
                 generation,
@@ -127,6 +160,8 @@ export async function spawnGeneration(
                 score: 0,
                 alive: true,
               };
+              onSpore?.(spore);
+              return spore;
             })
         );
       }
@@ -145,7 +180,7 @@ export async function spawnGeneration(
           client
             .callHaiku(
               "You are a reasoning probe. Respond ONLY with the requested JSON format.",
-              buildSporePrompt(parent.angle, prompt, parent.lean)
+              buildSporePrompt(parent.angle, prompt, parent.lean, undefined, groundingContext, codeContext)
             )
             .then((raw) => {
               const resp = parseSporeResponse(raw);
@@ -154,7 +189,7 @@ export async function spawnGeneration(
                   `  [gen${generation}] ${parent.angle} (child of ${parent.id}): "${resp.lean.slice(0, 60)}..."`
                 );
               }
-              return {
+              const spore: Spore = {
                 id,
                 angle: parent.angle,
                 generation,
@@ -165,6 +200,8 @@ export async function spawnGeneration(
                 score: 0,
                 alive: true,
               };
+              onSpore?.(spore);
+              return spore;
             })
         );
       }
