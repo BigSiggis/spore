@@ -374,16 +374,30 @@ const spore = createSpore({
 
 ## Cost
 
-SPORE uses ~15-20 API calls per run. Designed for questions where being wrong is expensive.
+SPORE is advanced multi-angle reasoning — not a single API call. Each run spawns parallel probes, scores them, evolves survivors, fires deep synthesis, and collapses into a final answer. Cost scales with depth.
 
-| Component | Model | Calls | Est. Cost |
-|-----------|-------|-------|-----------|
-| Spore spawning | Haiku | 9/gen | ~$0.005 |
-| Scoring | Haiku | 1/gen | ~$0.001 |
-| Topic classify | Haiku | 1 | ~$0.0001 |
-| Mycelium | Sonnet | 1-3/gen | ~$0.01 |
-| Collapse | Sonnet + Haiku | 2-3 | ~$0.01 |
-| **Total (2 gen)** | | **~18-25** | **~$0.03-0.05** |
+**Typical range: $0.10 – $0.30 per run** depending on complexity, generations, and how many mycelium synthesis calls fire.
+
+| Component | Model | Calls per gen | Notes |
+|-----------|-------|---------------|-------|
+| Spore spawning | Haiku | 9 | One per angle, cheap |
+| Scoring | Haiku | 1 (batch) | Scores all spores at once |
+| Topic classify | Haiku | 1 (once) | Classifies prompt topic |
+| Mycelium synthesis | Sonnet | 2-5 | Fires on dense clusters — this is where most cost lives |
+| Collapse | Sonnet | 2-3 | Topology + contradiction + final synthesis |
+
+**What drives cost up:**
+- More generations (`generations: 3` = ~50% more than default 2)
+- Complex questions that produce many dense clusters (more mycelium calls)
+- Code analysis (more context tokens per call)
+- Web grounding enabled (additional Tavily + processing calls)
+
+**What keeps it cheap:**
+- Simple questions with fast convergence
+- `generations: 1` for quick analysis (~$0.05-0.10)
+- Disabling web grounding (`webGrounding: false`)
+
+This is designed for questions where being wrong is expensive — architecture decisions, security reviews, strategy calls. For simple lookups, just ask Claude directly.
 
 ## Why Not Just Prompt Better?
 
