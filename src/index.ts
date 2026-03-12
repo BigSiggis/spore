@@ -51,6 +51,8 @@ export type {
   CodeContext,
   CustomAngle,
   CostEstimate,
+  SelfReviewResult,
+  SelfReviewIssue,
 } from "./types.js";
 export { formatCodeContext } from "./code-context.js";
 
@@ -264,6 +266,9 @@ export function createSpore(userConfig?: Partial<SporeConfig>): SporeEngine {
       if (v) console.log("\n── Collapse ──");
       emit({ stage: "collapse-start", generation });
 
+      const selfReviewEnabled = config.selfReview !== false;
+      const selfReviewRevise = config.selfReviewRevise !== false;
+
       const collapseResult = await collapse(
         client,
         prompt,
@@ -272,7 +277,11 @@ export function createSpore(userConfig?: Partial<SporeConfig>): SporeEngine {
         myceliumResults,
         v,
         activeAngles,
-        config.onStream
+        config.onStream,
+        selfReviewEnabled,
+        selfReviewRevise,
+        !!codeContext,
+        (stage, review) => emit({ stage, generation, data: { review } })
       );
 
       emit({ stage: "collapse-topology", generation, data: { topology: collapseResult.topology, collapseResult } });

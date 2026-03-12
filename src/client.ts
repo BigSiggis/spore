@@ -141,7 +141,10 @@ export function estimateCost(config: {
   const contradictionCalls = 1;
   // Synthesis: 1 sonnet
   const synthesisCalls = 1;
-  const totalSonnetCalls = myceliumCalls + contradictionCalls + synthesisCalls;
+  // Self-review: 1 sonnet + ~0.3 estimated revision calls
+  const reviewCalls = 1;
+  const revisionCalls = 0.3;
+  const totalSonnetCalls = myceliumCalls + contradictionCalls + synthesisCalls + reviewCalls + revisionCalls;
 
   // Avg tokens per call (empirical)
   const haikuAvgInput = 800;
@@ -162,6 +165,8 @@ export function estimateCost(config: {
       { stage: "contradiction-mapping", calls: contradictionCalls, model: "sonnet" },
       { stage: "mycelium", calls: myceliumCalls, model: "sonnet" },
       { stage: "synthesis", calls: synthesisCalls, model: "sonnet" },
+      { stage: "self-review", calls: reviewCalls, model: "sonnet" },
+      { stage: "revision", calls: revisionCalls, model: "sonnet" },
     ],
   };
 }

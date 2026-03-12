@@ -66,6 +66,15 @@ server.tool(
       meta: result.meta,
     };
 
+    if (result.review) {
+      output.review = {
+        issuesFound: result.review.issuesFound,
+        issueCount: result.review.issueCount,
+        revised: result.review.revised,
+        issues: result.review.issues,
+      };
+    }
+
     return {
       content: [{ type: "text", text: JSON.stringify(output, null, 2) }],
     };
@@ -129,6 +138,15 @@ server.tool(
       approachBreakdown: result.approachBreakdown,
       meta: result.meta,
     };
+
+    if (result.review) {
+      output.review = {
+        issuesFound: result.review.issuesFound,
+        issueCount: result.review.issueCount,
+        revised: result.review.revised,
+        issues: result.review.issues,
+      };
+    }
 
     return {
       content: [{ type: "text", text: JSON.stringify(output, null, 2) }],

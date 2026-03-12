@@ -7,6 +7,8 @@ import type {
   TopologyShape,
   Contradiction,
   CollapseResult,
+  SelfReviewResult,
+  SelfReviewIssue,
 } from "./types.js";
 import { ANGLES } from "./types.js";
 import type { SporeClient } from "./client.js";
@@ -139,7 +141,8 @@ async function synthesize(
   contradictions: Contradiction[],
   rawSpores: Spore[],
   verbose?: boolean,
-  onStream?: (chunk: string) => void
+  onStream?: (chunk: string) => void,
+  critique?: string
 ): Promise<{ answer: string; approachBreakdown: Record<Angle, number>; confidence: number }> {
   // Build scored conclusions
   const scoredConclusions =
@@ -198,7 +201,10 @@ SCORED CONCLUSIONS:
 ${scoredConclusions}
 
 CONTRADICTIONS:
-${contradictionSummary}`;
+${contradictionSummary}${critique ? `
+
+SELF-REVIEW CRITIQUE (fix these issues in your revised answer):
+${critique}` : ""}`;
 
   let raw: string;
 
@@ -242,6 +248,71 @@ ${contradictionSummary}`;
   }
 }
 
+// ── Phase 4: Self-Review (1 Sonnet call, temp 0.2) ─────────────
+async function selfReview(
+  client: SporeClient,
+  answer: string,
+  prompt: string,
+  isCodeContext: boolean,
+  verbose?: boolean
+): Promise<SelfReviewResult> {
+  const codeSystemPrompt = `You are a ruthless code reviewer. Examine SPORE's synthesized answer for:
+- Bugs in any suggested code (off-by-one, null refs, wrong types, missing await)
+- Security issues (injection, hardcoded secrets, missing validation)
+- Inconsistencies between the explanation and the code
+- Wrong API usage or deprecated patterns
+- Logic that doesn't match the stated intent
+
+Respond with ONLY valid JSON:
+{"issues":[{"type":"bug|security|logic-gap|inconsistency|overconfidence|wrong-api","severity":"critical|moderate|minor","description":"..."}]}
+
+Return {"issues":[]} if the answer is clean.`;
+
+  const generalSystemPrompt = `You are a critical reviewer. Examine SPORE's synthesized answer for:
+- Logic gaps or unsupported claims
+- Contradictions within the answer itself
+- Overconfidence given the evidence
+- Missing important caveats or edge cases
+- Factual errors
+
+Respond with ONLY valid JSON:
+{"issues":[{"type":"bug|security|logic-gap|inconsistency|overconfidence|wrong-api","severity":"critical|moderate|minor","description":"..."}]}
+
+Return {"issues":[]} if the answer is clean. Only flag real problems — no nitpicking.`;
+
+  const systemPrompt = isCodeContext ? codeSystemPrompt : generalSystemPrompt;
+  const userPrompt = `ORIGINAL QUESTION: ${prompt}
+
+SPORE'S ANSWER TO REVIEW:
+${answer}`;
+
+  const raw = await client.callSonnet(systemPrompt, userPrompt, 500, 0.2);
+
+  try {
+    const jsonMatch = raw.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return { issuesFound: false, issueCount: 0, revised: false, issues: [] };
+    const parsed = JSON.parse(jsonMatch[0]);
+    const issues: SelfReviewIssue[] = (parsed.issues ?? []).map((i: any) => ({
+      type: ["bug", "security", "logic-gap", "inconsistency", "overconfidence", "wrong-api"].includes(i.type) ? i.type : "logic-gap",
+      severity: ["critical", "moderate", "minor"].includes(i.severity) ? i.severity : "minor",
+      description: String(i.description ?? ""),
+    }));
+
+    if (verbose && issues.length > 0) {
+      console.log(`  [self-review] Found ${issues.length} issue(s): ${issues.map(i => `${i.severity}/${i.type}`).join(", ")}`);
+    }
+
+    return {
+      issuesFound: issues.length > 0,
+      issueCount: issues.length,
+      revised: false,
+      issues,
+    };
+  } catch {
+    return { issuesFound: false, issueCount: 0, revised: false, issues: [] };
+  }
+}
+
 // ── Full Collapse Pipeline ─────────────────────────────────────
 export async function collapse(
   client: SporeClient,
@@ -251,7 +322,11 @@ export async function collapse(
   myceliumResults: MyceliumResult[],
   verbose?: boolean,
   activeAngles?: Angle[],
-  onStream?: (chunk: string) => void
+  onStream?: (chunk: string) => void,
+  selfReviewEnabled = true,
+  selfReviewRevise = true,
+  isCodeContext = false,
+  onReviewEvent?: (stage: "review-start" | "review-done" | "review-revise", review: SelfReviewResult) => void
 ): Promise<CollapseResult> {
   if (verbose) console.log("\n[collapse] Phase 1: Topology analysis...");
   const topology = analyzeTopology(allSpores, clusters, activeAngles);
@@ -271,7 +346,7 @@ export async function collapse(
   );
 
   if (verbose) console.log("[collapse] Phase 3: Weighted synthesis...");
-  const synthesis = await synthesize(
+  let synthesis = await synthesize(
     client,
     prompt,
     topology,
@@ -282,12 +357,49 @@ export async function collapse(
     onStream
   );
 
+  // Phase 4: Self-Review
+  let review: SelfReviewResult | undefined;
+  if (selfReviewEnabled) {
+    if (verbose) console.log("[collapse] Phase 4: Self-review...");
+    onReviewEvent?.("review-start", { issuesFound: false, issueCount: 0, revised: false, issues: [] });
+
+    review = await selfReview(client, synthesis.answer, prompt, isCodeContext, verbose);
+    onReviewEvent?.("review-done", review);
+
+    if (review.issuesFound && selfReviewRevise) {
+      if (verbose) console.log("[collapse] Phase 4b: Re-synthesizing with critique...");
+      const critique = review.issues
+        .map((i, idx) => `${idx + 1}. [${i.severity}/${i.type}] ${i.description}`)
+        .join("\n");
+
+      // Re-synthesize without streaming (original stream already went out)
+      synthesis = await synthesize(
+        client,
+        prompt,
+        topology,
+        myceliumResults,
+        contradictions,
+        allSpores,
+        verbose,
+        undefined,
+        critique
+      );
+      review = { ...review, revised: true };
+      onReviewEvent?.("review-revise", review);
+    }
+
+    if (verbose && !review.issuesFound) {
+      console.log("  [self-review] Clean — no issues found");
+    }
+  }
+
   return {
     answer: synthesis.answer,
     topology,
     contradictions,
     approachBreakdown: synthesis.approachBreakdown,
     confidence: synthesis.confidence,
+    review,
   };
 }
 

@@ -79,6 +79,20 @@ export interface MyceliumResult {
   codeReferences?: CodeReference[];
 }
 
+// ── Self-Review ─────────────────────────────────────────────────
+export interface SelfReviewIssue {
+  type: "bug" | "security" | "logic-gap" | "inconsistency" | "overconfidence" | "wrong-api";
+  severity: "critical" | "moderate" | "minor";
+  description: string;
+}
+
+export interface SelfReviewResult {
+  issuesFound: boolean;
+  issueCount: number;
+  revised: boolean;
+  issues: SelfReviewIssue[];
+}
+
 // ── Collapse ────────────────────────────────────────────────────
 export type TopologyShape = "convergent" | "bipolar" | "fragmented" | "monocultural";
 
@@ -105,6 +119,7 @@ export interface CollapseResult {
   contradictions: Contradiction[];
   approachBreakdown: Record<Angle, number>; // angle → weight in final answer
   confidence: number;
+  review?: SelfReviewResult;
 }
 
 // ── Pheromone Trails ────────────────────────────────────────────
@@ -135,7 +150,10 @@ export type PipelineStage =
   | "mycelium-done"
   | "collapse-start"
   | "collapse-topology"
-  | "collapse-done";
+  | "collapse-done"
+  | "review-start"
+  | "review-done"
+  | "review-revise";
 
 export interface PipelineEvent {
   stage: PipelineStage;
@@ -149,6 +167,7 @@ export interface PipelineEvent {
     myceliumResults?: MyceliumResult[];
     topology?: TopologyAnalysis;
     collapseResult?: CollapseResult;
+    review?: SelfReviewResult;
     totalSpores?: number;
     aliveCount?: number;
     deadCount?: number;
@@ -216,6 +235,10 @@ export interface SporeConfig {
   timeoutMs?: number;
   /** Stream the final synthesis output (returns chunks via onStream callback) */
   onStream?: (chunk: string) => void;
+  /** Enable post-synthesis self-review (default true) */
+  selfReview?: boolean;
+  /** Auto-revise if self-review finds issues (default true) */
+  selfReviewRevise?: boolean;
 }
 
 export const DEFAULT_CONFIG: SporeConfig = {
