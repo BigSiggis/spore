@@ -30,6 +30,7 @@
     "build": "tsc",
     "example": "tsx examples/basic.ts",
     "dev": "tsx src/index.ts",
+    "test": "vitest run",
     "prepublishOnly": "npm run build"
   },
   "files": [
@@ -70,7 +71,8 @@
   },
   "devDependencies": {
     "tsx": "^4.19.0",
-    "typescript": "^5.7.0"
+    "typescript": "^5.7.0",
+    "vitest": "^4.0.18"
   },
   "engines": {
     "node": ">=18"
