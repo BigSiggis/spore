@@ -107,7 +107,7 @@ Dead angles: ${topology.deadAngles.join(", ")}
 Conclusions to compare:
 ${conclusions}`;
 
-  const raw = await client.callHaiku(systemPrompt, userPrompt, 500, 0.3);
+  const raw = await client.callSonnet(systemPrompt, userPrompt, 500, 0.3);
 
   try {
     const jsonMatch = raw.match(/\[[\s\S]*\]/);

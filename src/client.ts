@@ -137,11 +137,11 @@ export function estimateCost(config: {
 
   // Mycelium: assume 2-3 clusters meet density, 1 sonnet each
   const myceliumCalls = Math.max(1, Math.ceil(anglesPerGeneration / densityThreshold));
-  // Contradiction mapping: 1 haiku
+  // Contradiction mapping: 1 sonnet
   const contradictionCalls = 1;
   // Synthesis: 1 sonnet
   const synthesisCalls = 1;
-  const totalSonnetCalls = myceliumCalls + synthesisCalls;
+  const totalSonnetCalls = myceliumCalls + contradictionCalls + synthesisCalls;
 
   // Avg tokens per call (empirical)
   const haikuAvgInput = 800;
@@ -158,7 +158,8 @@ export function estimateCost(config: {
     breakdown: [
       { stage: "spawning", calls: gen0Spawns + subsequentSpawns, model: "haiku" },
       { stage: "scoring", calls: scoringCalls, model: "haiku" },
-      { stage: "classification", calls: classifyCalls + contradictionCalls + summaryCalls, model: "haiku" },
+      { stage: "classification", calls: classifyCalls + summaryCalls, model: "haiku" },
+      { stage: "contradiction-mapping", calls: contradictionCalls, model: "sonnet" },
       { stage: "mycelium", calls: myceliumCalls, model: "sonnet" },
       { stage: "synthesis", calls: synthesisCalls, model: "sonnet" },
     ],
@@ -295,30 +296,52 @@ export class SporeClient {
   ): AsyncGenerator<string, string, undefined> {
     await this.semaphore.acquire();
     try {
-      const stream = this.client.messages.stream({
-        model: "claude-sonnet-4-6",
-        max_tokens: maxTokens,
-        temperature,
-        system,
-        messages: [{ role: "user", content: prompt }],
-      });
+      // Retry wrapper for stream — retries on transient errors before any chunks are yielded
+      let lastError: unknown;
+      for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+        try {
+          const stream = this.client.messages.stream({
+            model: "claude-sonnet-4-6",
+            max_tokens: maxTokens,
+            temperature,
+            system,
+            messages: [{ role: "user", content: prompt }],
+          });
 
-      let fullText = "";
-      for await (const event of stream) {
-        if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
-          fullText += event.delta.text;
-          yield event.delta.text;
+          let fullText = "";
+          let lastChunkTime = Date.now();
+          const streamTimeout = this.timeoutMs * 2; // streams get 2x timeout for slow generation
+
+          for await (const event of stream) {
+            // Check for stalled stream
+            if (Date.now() - lastChunkTime > streamTimeout) {
+              throw new Error(`streamSonnet stalled — no data for ${streamTimeout}ms`);
+            }
+            lastChunkTime = Date.now();
+
+            if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
+              fullText += event.delta.text;
+              yield event.delta.text;
+            }
+          }
+
+          const finalMessage = await stream.finalMessage();
+          this.costTracker.record({
+            inputTokens: finalMessage.usage.input_tokens,
+            outputTokens: finalMessage.usage.output_tokens,
+            model: "claude-sonnet-4-6",
+          });
+
+          return fullText;
+        } catch (err: any) {
+          lastError = err;
+          const status = err?.status ?? err?.statusCode;
+          if (!RETRYABLE_STATUS.has(status) || attempt === MAX_RETRIES) throw err;
+          const delay = BASE_DELAY_MS * Math.pow(2, attempt) + Math.random() * 500;
+          await new Promise((r) => setTimeout(r, delay));
         }
       }
-
-      const finalMessage = await stream.finalMessage();
-      this.costTracker.record({
-        inputTokens: finalMessage.usage.input_tokens,
-        outputTokens: finalMessage.usage.output_tokens,
-        model: "claude-sonnet-4-6",
-      });
-
-      return fullText;
+      throw lastError;
     } finally {
       this.semaphore.release();
     }

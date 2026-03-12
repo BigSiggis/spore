@@ -6,10 +6,8 @@ import { keywordsToVector } from "./density.js";
 import type { AngleCache } from "./cache.js";
 import { getCached, setCache } from "./cache.js";
 
-let sporeCounter = 0;
-
-function makeId(gen: number, angle: Angle): string {
-  return `spore-${gen}-${angle}-${sporeCounter++}`;
+function makeId(gen: number, angle: Angle, counter: { value: number }): string {
+  return `spore-${gen}-${angle}-${counter.value++}`;
 }
 
 const ANGLE_PROMPTS: Record<Angle, string> = {
@@ -112,10 +110,12 @@ export async function spawnGeneration(
   angleWeights?: Record<string, number>,
   activeAngles?: Angle[],
   customAngles?: CustomAngle[],
-  cache?: { data: AngleCache; promptHash: string } | null
+  cache?: { data: AngleCache; promptHash: string } | null,
+  idCounter?: { value: number }
 ): Promise<Spore[]> {
   const tasks: Promise<Spore>[] = [];
   const anglesToUse = activeAngles ?? ANGLES;
+  const counter = idCounter ?? { value: 0 };
 
   if (generation === 0 || !parents) {
     // Gen-0: fresh probes across selected angles
@@ -141,7 +141,7 @@ export async function spawnGeneration(
           : undefined;
 
       for (let i = 0; i < count; i++) {
-        const id = makeId(generation, angle);
+        const id = makeId(generation, angle, counter);
 
         // Check cache for gen-0 probes (only first spore per angle, no pheromone bias)
         const cached = cache && i === 0 && !biasStr
@@ -192,7 +192,7 @@ export async function spawnGeneration(
     // Spawn custom angle probes in gen-0
     if (customAngles && customAngles.length > 0) {
       for (const custom of customAngles) {
-        const id = makeId(generation, custom.name as Angle);
+        const id = makeId(generation, custom.name as Angle, counter);
         tasks.push(
           client
             .callHaiku(
@@ -233,7 +233,7 @@ export async function spawnGeneration(
       if (childCount === 0) continue;
 
       for (let i = 0; i < childCount; i++) {
-        const id = makeId(generation, parent.angle);
+        const id = makeId(generation, parent.angle, counter);
         tasks.push(
           client
             .callHaiku(

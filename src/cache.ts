@@ -17,10 +17,20 @@ export interface CacheEntry {
 export interface AngleCache {
   version: 1;
   entries: CacheEntry[];
+  /** In-memory index for O(1) lookups — not serialized */
+  _index: Map<string, CacheEntry>;
 }
 
 function cacheKey(promptHash: string, angle: string): string {
   return `${promptHash}:${angle}`;
+}
+
+function buildIndex(entries: CacheEntry[]): Map<string, CacheEntry> {
+  const index = new Map<string, CacheEntry>();
+  for (const e of entries) {
+    index.set(cacheKey(e.promptHash, e.angle), e);
+  }
+  return index;
 }
 
 export function hashForCache(prompt: string): string {
@@ -29,29 +39,32 @@ export function hashForCache(prompt: string): string {
 
 export function loadCache(trailDir: string): AngleCache {
   const path = join(trailDir, CACHE_FILE);
-  if (!existsSync(path)) return { version: 1, entries: [] };
+  if (!existsSync(path)) return { version: 1, entries: [], _index: new Map() };
 
   try {
     const raw = readFileSync(path, "utf-8");
-    const cache = JSON.parse(raw) as AngleCache;
+    const data = JSON.parse(raw) as { version: 1; entries: CacheEntry[] };
     // Prune expired entries on load
     const now = Date.now();
-    cache.entries = cache.entries.filter((e) => now - e.timestamp < DEFAULT_TTL_MS);
-    return cache;
+    const entries = data.entries.filter((e) => now - e.timestamp < DEFAULT_TTL_MS);
+    return { version: 1, entries, _index: buildIndex(entries) };
   } catch {
-    return { version: 1, entries: [] };
+    return { version: 1, entries: [], _index: new Map() };
   }
 }
 
 export function saveCache(trailDir: string, cache: AngleCache): void {
   mkdirSync(trailDir, { recursive: true });
   // Cap entries
-  if (cache.entries.length > MAX_ENTRIES) {
-    cache.entries.sort((a, b) => b.timestamp - a.timestamp);
-    cache.entries = cache.entries.slice(0, MAX_ENTRIES);
+  let entries = cache.entries;
+  if (entries.length > MAX_ENTRIES) {
+    entries = [...entries].sort((a, b) => b.timestamp - a.timestamp).slice(0, MAX_ENTRIES);
+    cache.entries = entries;
+    cache._index = buildIndex(entries);
   }
   const path = join(trailDir, CACHE_FILE);
-  writeFileSync(path, JSON.stringify(cache, null, 2), "utf-8");
+  // Don't serialize _index
+  writeFileSync(path, JSON.stringify({ version: cache.version, entries: cache.entries }, null, 2), "utf-8");
 }
 
 export function getCached(
@@ -59,10 +72,7 @@ export function getCached(
   promptHash: string,
   angle: string
 ): SporeResponse | null {
-  const key = cacheKey(promptHash, angle);
-  const entry = cache.entries.find(
-    (e) => cacheKey(e.promptHash, e.angle) === key
-  );
+  const entry = cache._index.get(cacheKey(promptHash, angle));
   if (!entry) return null;
   // Check TTL
   if (Date.now() - entry.timestamp > DEFAULT_TTL_MS) return null;
@@ -75,15 +85,13 @@ export function setCache(
   angle: string,
   response: SporeResponse
 ): void {
-  // Remove existing entry for this key if present
   const key = cacheKey(promptHash, angle);
-  cache.entries = cache.entries.filter(
-    (e) => cacheKey(e.promptHash, e.angle) !== key
-  );
-  cache.entries.push({
-    promptHash,
-    angle,
-    response,
-    timestamp: Date.now(),
-  });
+  // Remove existing entry if present
+  const existing = cache._index.get(key);
+  if (existing) {
+    cache.entries = cache.entries.filter((e) => e !== existing);
+  }
+  const entry: CacheEntry = { promptHash, angle, response, timestamp: Date.now() };
+  cache.entries.push(entry);
+  cache._index.set(key, entry);
 }

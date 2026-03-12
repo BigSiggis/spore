@@ -117,8 +117,15 @@ export function updateApproachMemory(
   memory.totalRuns++;
   const now = Date.now();
 
+  // Only track angles that were actually used in this run
+  const anglesUsed = new Set(Object.keys(runData.angleScores));
+
   for (const angle of ANGLES) {
     const stats = memory.angles[angle];
+
+    // Skip angles that weren't part of this run
+    if (!anglesUsed.has(angle)) continue;
+
     stats.totalRuns++;
 
     const survived = runData.survivingAngles.includes(angle);

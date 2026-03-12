@@ -151,6 +151,7 @@ export function createSpore(userConfig?: Partial<SporeConfig>): SporeEngine {
       let clusters: Cluster[] = [];
       let myceliumResults: MyceliumResult[] = [];
       let generation = 0;
+      const sporeIdCounter = { value: 0 };
 
       // ── Generation Loop ──────────────────────────────────
       for (generation = 0; generation < config.generations; generation++) {
@@ -180,7 +181,8 @@ export function createSpore(userConfig?: Partial<SporeConfig>): SporeEngine {
           angleWeights,
           activeAngles,
           generation === 0 ? customAngles : undefined,
-          generation === 0 ? cacheCtx : null
+          generation === 0 ? cacheCtx : null,
+          sporeIdCounter
         );
 
         allSpores.push(...newSpores);
@@ -394,10 +396,11 @@ export function createSpore(userConfig?: Partial<SporeConfig>): SporeEngine {
   };
 
   const estimateCostFn = (hasCodeContext = false) => {
-    const anglesPerGeneration = hasCodeContext ? 9 : 9; // 4 code + 5 general or 9 general
+    const selection = selectAngles(hasCodeContext, undefined, undefined, config.customAngles);
+    const anglesPerGeneration = selection.angles.length + selection.customAngles.length;
     return estimateCost({
       generations: config.generations,
-      anglesPerGeneration: anglesPerGeneration + (config.customAngles?.length ?? 0),
+      anglesPerGeneration,
       sporesPerAngle: config.sporesPerAngle,
       densityThreshold: config.densityThreshold,
     });

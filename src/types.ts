@@ -54,13 +54,6 @@ export const ScoreSchema = z.object({
 
 export type ScoreBreakdown = z.infer<typeof ScoreSchema>;
 
-export const SCORE_WEIGHTS = {
-  specificity: 0.35,
-  consistency: 0.25,
-  novelty: 0.25,
-  hedgePenalty: -0.15,
-} as const;
-
 // ── Clustering ──────────────────────────────────────────────────
 export interface Cluster {
   id: number;
