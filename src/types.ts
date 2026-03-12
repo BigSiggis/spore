@@ -170,6 +170,16 @@ export interface CodeContext {
   formatted: string; // pre-formatted code context string
 }
 
+// ── Custom Angles ───────────────────────────────────────────────
+export interface CustomAngle {
+  /** Unique name for this angle (lowercase, kebab-case) */
+  name: string;
+  /** Directive prompt telling the probe how to reason from this angle */
+  prompt: string;
+  /** Whether this is a code-specific angle (default false) */
+  isCodeAngle?: boolean;
+}
+
 // ── Config ──────────────────────────────────────────────────────
 export interface SporeConfig {
   /** Max concurrent API calls */
@@ -200,6 +210,12 @@ export interface SporeConfig {
   webGrounding?: boolean;
   /** Enable approach memory (learning which angles work over time) */
   approachMemory?: boolean;
+  /** Custom reasoning angles to add to the pipeline */
+  customAngles?: CustomAngle[];
+  /** Per-call timeout in ms (default 60000) */
+  timeoutMs?: number;
+  /** Stream the final synthesis output (returns chunks via onStream callback) */
+  onStream?: (chunk: string) => void;
 }
 
 export const DEFAULT_CONFIG: SporeConfig = {
@@ -231,8 +247,15 @@ export interface ReasonResult {
   };
 }
 
+export interface CostEstimate {
+  low: number;
+  high: number;
+  breakdown: { stage: string; calls: number; model: string }[];
+}
+
 export interface SporeEngine {
   reason: (prompt: string, codeContext?: CodeContext) => Promise<ReasonResult>;
+  estimateCost: (hasCodeContext?: boolean) => CostEstimate;
 }
 
 // ── Engine V2 (backward compat) ─────────────────────────────────

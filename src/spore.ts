@@ -1,5 +1,5 @@
 import { createHash } from "crypto";
-import type { Spore, Angle, SporeResponse, PheromoneEntry } from "./types.js";
+import type { Spore, Angle, SporeResponse, PheromoneEntry, CustomAngle } from "./types.js";
 import { ANGLES } from "./types.js";
 import type { SporeClient } from "./client.js";
 import { keywordsToVector } from "./density.js";
@@ -45,9 +45,11 @@ function buildSporePrompt(
   parentLean?: string,
   pheromoneBias?: string,
   groundingContext?: string,
-  codeContext?: string
+  codeContext?: string,
+  customDirective?: string
 ): string {
-  let p = `QUESTION: ${prompt}\n\nAPPROACH (${angle}): ${ANGLE_PROMPTS[angle]}`;
+  const directive = customDirective ?? ANGLE_PROMPTS[angle as keyof typeof ANGLE_PROMPTS];
+  let p = `QUESTION: ${prompt}\n\nAPPROACH (${angle}): ${directive ?? "Analyze this from your unique perspective."}`;
 
   if (codeContext) {
     p += `\n\nCODE CONTEXT (analyze this code — focus on your approach angle):\n${codeContext}`;
@@ -106,7 +108,8 @@ export async function spawnGeneration(
   groundingContext?: string,
   codeContext?: string,
   angleWeights?: Record<string, number>,
-  activeAngles?: Angle[]
+  activeAngles?: Angle[],
+  customAngles?: CustomAngle[]
 ): Promise<Spore[]> {
   const tasks: Promise<Spore>[] = [];
   const anglesToUse = activeAngles ?? ANGLES;
@@ -166,13 +169,48 @@ export async function spawnGeneration(
         );
       }
     }
+    // Spawn custom angle probes in gen-0
+    if (customAngles && customAngles.length > 0) {
+      for (const custom of customAngles) {
+        const id = makeId(generation, custom.name as Angle);
+        tasks.push(
+          client
+            .callHaiku(
+              "You are a reasoning probe. Respond ONLY with the requested JSON format.",
+              buildSporePrompt(custom.name as Angle, prompt, undefined, undefined, groundingContext, codeContext, custom.prompt)
+            )
+            .then((raw) => {
+              const resp = parseSporeResponse(raw);
+              if (verbose) {
+                console.log(
+                  `  [gen${generation}] ${custom.name} (custom): "${resp.lean.slice(0, 80)}..."`
+                );
+              }
+              const spore: Spore = {
+                id,
+                angle: custom.name as Angle,
+                generation,
+                parentId: null,
+                lean: resp.lean,
+                keywords: resp.keywords,
+                vector: keywordsToVector(resp.keywords),
+                score: 0,
+                alive: true,
+              };
+              onSpore?.(spore);
+              return spore;
+            })
+        );
+      }
+    }
   } else {
     // Subsequent gens: spawn children from surviving parents
     for (const parent of parents) {
       if (!parent.alive) continue;
 
-      // High scorers spawn 2, medium spawn 1
-      const childCount = parent.score >= 0.6 ? 2 : 1;
+      // High scorers spawn 2, medium spawn 1, low scorers get starved
+      const childCount = parent.score >= 0.6 ? 2 : parent.score >= 0.4 ? 1 : 0;
+      if (childCount === 0) continue;
 
       for (let i = 0; i < childCount; i++) {
         const id = makeId(generation, parent.angle);
@@ -208,7 +246,16 @@ export async function spawnGeneration(
     }
   }
 
-  return Promise.all(tasks);
+  // Use allSettled so one failed probe doesn't kill the whole generation
+  const results = await Promise.allSettled(tasks);
+  const spores: Spore[] = [];
+  for (const result of results) {
+    if (result.status === "fulfilled") {
+      spores.push(result.value);
+    }
+    // Rejected probes are silently dropped — pipeline continues with survivors
+  }
+  return spores;
 }
 
 // Check early termination: if all alive spores cluster to 1 group

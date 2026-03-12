@@ -27,7 +27,7 @@ function getSpore(overrides = {}) {
 
 const server = new McpServer({
   name: "spore",
-  version: "0.1.0",
+  version: "0.4.0",
 });
 
 // ── Tool 1: Full multi-angle reasoning ──────────────────────────
@@ -207,7 +207,7 @@ server.tool(
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error("SPORE MCP server running on stdio");
+  console.error("SPORE MCP server v0.4.0 running on stdio");
 }
 
 main().catch((err) => {

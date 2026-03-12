@@ -138,7 +138,8 @@ async function synthesize(
   myceliumResults: MyceliumResult[],
   contradictions: Contradiction[],
   rawSpores: Spore[],
-  verbose?: boolean
+  verbose?: boolean,
+  onStream?: (chunk: string) => void
 ): Promise<{ answer: string; approachBreakdown: Record<Angle, number>; confidence: number }> {
   // Build scored conclusions
   const scoredConclusions =
@@ -199,7 +200,19 @@ ${scoredConclusions}
 CONTRADICTIONS:
 ${contradictionSummary}`;
 
-  const raw = await client.callSonnet(systemPrompt, userPrompt, 800, 0.3);
+  let raw: string;
+
+  if (onStream) {
+    // Stream mode: pipe chunks to callback, collect full text
+    let accumulated = "";
+    for await (const chunk of client.streamSonnet(systemPrompt, userPrompt, 800, 0.3)) {
+      onStream(chunk);
+      accumulated += chunk;
+    }
+    raw = accumulated;
+  } else {
+    raw = await client.callSonnet(systemPrompt, userPrompt, 800, 0.3);
+  }
 
   try {
     const jsonMatch = raw.match(/\{[\s\S]*\}/);
@@ -237,7 +250,8 @@ export async function collapse(
   clusters: Cluster[],
   myceliumResults: MyceliumResult[],
   verbose?: boolean,
-  activeAngles?: Angle[]
+  activeAngles?: Angle[],
+  onStream?: (chunk: string) => void
 ): Promise<CollapseResult> {
   if (verbose) console.log("\n[collapse] Phase 1: Topology analysis...");
   const topology = analyzeTopology(allSpores, clusters, activeAngles);
@@ -264,7 +278,8 @@ export async function collapse(
     myceliumResults,
     contradictions,
     allSpores,
-    verbose
+    verbose,
+    onStream
   );
 
   return {

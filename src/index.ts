@@ -8,7 +8,7 @@ import type {
   PipelineEvent,
 } from "./types.js";
 import { DEFAULT_CONFIG } from "./types.js";
-import { SporeClient } from "./client.js";
+import { SporeClient, estimateCost } from "./client.js";
 import { spawnGeneration, hasConverged } from "./spore.js";
 import { scoreSpores, applyScores } from "./scoring.js";
 import { clusterSpores } from "./density.js";
@@ -47,6 +47,8 @@ export type {
   PipelineEvent,
   PipelineCallback,
   CodeContext,
+  CustomAngle,
+  CostEstimate,
 } from "./types.js";
 export { formatCodeContext } from "./code-context.js";
 
@@ -56,6 +58,7 @@ export function createSpore(userConfig?: Partial<SporeConfig>): SporeEngine {
   const client = new SporeClient({
     apiKey: config.apiKey,
     concurrency: config.concurrency,
+    timeoutMs: config.timeoutMs,
   });
 
   const reasonFn = async (prompt: string, codeContext?: CodeContext): Promise<ReasonResult> => {
@@ -102,8 +105,9 @@ export function createSpore(userConfig?: Partial<SporeConfig>): SporeEngine {
 
       // Select angles based on code context
       const hasCode = !!codeContextStr;
-      const angleSelection = selectAngles(hasCode, angleWeights, topicTag);
+      const angleSelection = selectAngles(hasCode, angleWeights, topicTag, config.customAngles);
       const activeAngles = angleSelection.angles;
+      const customAngles = angleSelection.customAngles;
       if (v) console.log(`[angles] ${angleSelection.reason}`);
 
       // ── Web Search Grounding ────────────────────────────
@@ -156,7 +160,8 @@ export function createSpore(userConfig?: Partial<SporeConfig>): SporeEngine {
           groundingContext ?? undefined,
           codeContextStr,
           angleWeights,
-          activeAngles
+          activeAngles,
+          generation === 0 ? customAngles : undefined
         );
 
         allSpores.push(...newSpores);
@@ -245,7 +250,8 @@ export function createSpore(userConfig?: Partial<SporeConfig>): SporeEngine {
         clusters,
         myceliumResults,
         v,
-        activeAngles
+        activeAngles,
+        config.onStream
       );
 
       emit({ stage: "collapse-topology", generation, data: { topology: collapseResult.topology, collapseResult } });
@@ -333,7 +339,18 @@ export function createSpore(userConfig?: Partial<SporeConfig>): SporeEngine {
       };
   };
 
+  const estimateCostFn = (hasCodeContext = false) => {
+    const anglesPerGeneration = hasCodeContext ? 9 : 9; // 4 code + 5 general or 9 general
+    return estimateCost({
+      generations: config.generations,
+      anglesPerGeneration: anglesPerGeneration + (config.customAngles?.length ?? 0),
+      sporesPerAngle: config.sporesPerAngle,
+      densityThreshold: config.densityThreshold,
+    });
+  };
+
   return {
     reason: reasonFn,
+    estimateCost: estimateCostFn,
   };
 }
