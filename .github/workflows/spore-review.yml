@@ -14,7 +14,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: agentek-ai/spore/action@main
+      - uses: BigSiggis/spore/action@main
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           # tavily_api_key: ${{ secrets.TAVILY_API_KEY }}  # optional: enables web grounding

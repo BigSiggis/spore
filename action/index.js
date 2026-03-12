@@ -177,7 +177,7 @@ ${result.answer}
       commentBody += `\n### Tensions Detected\n\n| Type | Explanation |\n|------|-------------|\n${contradictions}\n`;
     }
 
-    commentBody += `\n</details>\n\n---\n*Powered by [SPORE](https://github.com/agentek-ai/spore) — Simultaneous Parallel Organic Reasoning Engine*`;
+    commentBody += `\n</details>\n\n---\n*Powered by [SPORE](https://github.com/BigSiggis/spore) — Simultaneous Parallel Organic Reasoning Engine*`;
 
     // Post comment
     if (commentOnPr) {

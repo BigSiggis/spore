@@ -300,7 +300,7 @@ export async function fallbackReason(
   if (verbose) console.log("[fallback] All spores died — single Sonnet call");
 
   const raw = await client.callSonnet(
-    `You are SPORE (Simultaneous Parallel Organic Reasoning Engine), a bio-inspired parallel reasoning assistant.
+    `You are SPORE (Simultaneous Parallel Organic Reasoning Engine), a slime mold-inspired parallel reasoning assistant.
 Be direct and helpful. If the user is sharing context, goals, or personal info, engage with it — don't lecture or give unsolicited strategic pushback.
 Match your tone to the input: casual questions get casual answers, technical questions get technical depth.
 Give a comprehensive, well-reasoned answer.`,

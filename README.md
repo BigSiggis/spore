@@ -2,7 +2,7 @@
   <img src="https://img.shields.io/npm/v/spore-reason?style=flat-square&color=orange" alt="npm version" />
   <img src="https://img.shields.io/npm/l/spore-reason?style=flat-square" alt="license" />
   <img src="https://img.shields.io/badge/powered%20by-Claude-blueviolet?style=flat-square" alt="powered by Claude" />
-  <img src="https://img.shields.io/badge/inspired%20by-Physarum%20polycephalum-green?style=flat-square" alt="bio-inspired" />
+  <img src="https://img.shields.io/badge/inspired%20by-Physarum%20polycephalum-green?style=flat-square" alt="slime mold-inspired" />
 </p>
 
 ```
@@ -184,7 +184,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: agentek-ai/spore/action@main
+      - uses: BigSiggis/spore/action@main
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           # tavily_api_key: ${{ secrets.TAVILY_API_KEY }}
@@ -448,7 +448,7 @@ MIT
 ---
 
 <p align="center">
-  <em>Built by <a href="https://github.com/agentek-ai">Agentek</a></em>
+  <em>Built by <a href="https://github.com/BigSiggis">BigSiggis</a></em>
   <br/>
   <em>Inspired by the intelligence of fungi</em>
   <br/><br/>

@@ -1,7 +1,7 @@
 {
   "name": "spore-reason",
   "version": "0.4.0",
-  "description": "Bio-inspired parallel reasoning engine modeled on Physarum polycephalum slime mold. Spawns multiple reasoning angles, evolves them through adversarial selection, and synthesizes verified answers.",
+  "description": "Slime mold-inspired parallel reasoning engine modeled on Physarum polycephalum. Spawns multiple reasoning angles, evolves them through adversarial selection, and synthesizes verified answers.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "type": "module",
@@ -47,7 +47,7 @@
     "llm",
     "slime-mold",
     "physarum",
-    "bio-inspired",
+    "slime-mold-inspired",
     "code-review",
     "security-audit",
     "multi-angle",
@@ -56,13 +56,13 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/agentek-ai/spore"
+    "url": "https://github.com/BigSiggis/spore"
   },
-  "homepage": "https://github.com/agentek-ai/spore#readme",
+  "homepage": "https://github.com/BigSiggis/spore#readme",
   "bugs": {
-    "url": "https://github.com/agentek-ai/spore/issues"
+    "url": "https://github.com/BigSiggis/spore/issues"
   },
-  "author": "Agentek",
+  "author": "BigSiggis",
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
     "dotenv": "^17.3.1",
