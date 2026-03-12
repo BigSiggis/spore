@@ -1,5 +1,5 @@
 name: 'SPORE Code Review'
-description: 'Bio-inspired multi-angle code review powered by Physarum polycephalum reasoning. Analyzes PRs for security, bugs, architecture, and performance.'
+description: 'Slime mold-inspired multi-angle code review powered by Physarum polycephalum reasoning. Analyzes PRs for security, bugs, architecture, and performance.'
 branding:
   icon: 'zap'
   color: 'orange'

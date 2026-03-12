@@ -3,6 +3,8 @@ import type { Spore, Angle, SporeResponse, PheromoneEntry, CustomAngle } from ".
 import { ANGLES } from "./types.js";
 import type { SporeClient } from "./client.js";
 import { keywordsToVector } from "./density.js";
+import type { AngleCache } from "./cache.js";
+import { getCached, setCache } from "./cache.js";
 
 let sporeCounter = 0;
 
@@ -109,7 +111,8 @@ export async function spawnGeneration(
   codeContext?: string,
   angleWeights?: Record<string, number>,
   activeAngles?: Angle[],
-  customAngles?: CustomAngle[]
+  customAngles?: CustomAngle[],
+  cache?: { data: AngleCache; promptHash: string } | null
 ): Promise<Spore[]> {
   const tasks: Promise<Spore>[] = [];
   const anglesToUse = activeAngles ?? ANGLES;
@@ -139,34 +142,51 @@ export async function spawnGeneration(
 
       for (let i = 0; i < count; i++) {
         const id = makeId(generation, angle);
-        tasks.push(
-          client
-            .callHaiku(
-              "You are a reasoning probe. Respond ONLY with the requested JSON format.",
-              buildSporePrompt(angle, prompt, undefined, biasStr, groundingContext, codeContext)
-            )
-            .then((raw) => {
-              const resp = parseSporeResponse(raw);
-              if (verbose) {
-                console.log(
-                  `  [gen${generation}] ${angle}: "${resp.lean.slice(0, 80)}..."`
-                );
-              }
-              const spore: Spore = {
-                id,
-                angle,
-                generation,
-                parentId: null,
-                lean: resp.lean,
-                keywords: resp.keywords,
-                vector: keywordsToVector(resp.keywords),
-                score: 0,
-                alive: true,
-              };
-              onSpore?.(spore);
-              return spore;
-            })
-        );
+
+        // Check cache for gen-0 probes (only first spore per angle, no pheromone bias)
+        const cached = cache && i === 0 && !biasStr
+          ? getCached(cache.data, cache.promptHash, angle)
+          : null;
+
+        if (cached) {
+          if (verbose) console.log(`  [gen${generation}] ${angle}: CACHED "${cached.lean.slice(0, 60)}..."`);
+          const spore: Spore = {
+            id, angle, generation, parentId: null,
+            lean: cached.lean, keywords: cached.keywords,
+            vector: keywordsToVector(cached.keywords),
+            score: 0, alive: true,
+          };
+          onSpore?.(spore);
+          tasks.push(Promise.resolve(spore));
+        } else {
+          tasks.push(
+            client
+              .callHaiku(
+                "You are a reasoning probe. Respond ONLY with the requested JSON format.",
+                buildSporePrompt(angle, prompt, undefined, biasStr, groundingContext, codeContext)
+              )
+              .then((raw) => {
+                const resp = parseSporeResponse(raw);
+                if (verbose) {
+                  console.log(
+                    `  [gen${generation}] ${angle}: "${resp.lean.slice(0, 80)}..."`
+                  );
+                }
+                // Store in cache
+                if (cache && !biasStr) {
+                  setCache(cache.data, cache.promptHash, angle, resp);
+                }
+                const spore: Spore = {
+                  id, angle, generation, parentId: null,
+                  lean: resp.lean, keywords: resp.keywords,
+                  vector: keywordsToVector(resp.keywords),
+                  score: 0, alive: true,
+                };
+                onSpore?.(spore);
+                return spore;
+              })
+          );
+        }
       }
     }
     // Spawn custom angle probes in gen-0

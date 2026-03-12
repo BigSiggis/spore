@@ -7,7 +7,7 @@ import type {
   MyceliumResult,
   PipelineEvent,
 } from "./types.js";
-import { DEFAULT_CONFIG } from "./types.js";
+import { DEFAULT_CONFIG, CustomAngleSchema } from "./types.js";
 import { SporeClient, estimateCost } from "./client.js";
 import { spawnGeneration, hasConverged } from "./spore.js";
 import { scoreSpores, applyScores } from "./scoring.js";
@@ -37,6 +37,8 @@ import {
   summarizeHistory,
   generateSessionId,
 } from "./session-memory.js";
+import { loadCache, saveCache, hashForCache } from "./cache.js";
+import { loadRunHistory, saveRunHistory, recordRun } from "./run-history.js";
 
 export type {
   ReasonResult,
@@ -54,6 +56,17 @@ export { formatCodeContext } from "./code-context.js";
 
 export function createSpore(userConfig?: Partial<SporeConfig>): SporeEngine {
   const config: SporeConfig = { ...DEFAULT_CONFIG, ...userConfig };
+
+  // Validate custom angles early
+  if (config.customAngles) {
+    for (const angle of config.customAngles) {
+      const result = CustomAngleSchema.safeParse(angle);
+      if (!result.success) {
+        const issues = result.error.issues.map((i) => i.message).join(", ");
+        throw new Error(`Invalid custom angle "${angle.name ?? "(unnamed)"}": ${issues}`);
+      }
+    }
+  }
 
   const client = new SporeClient({
     apiKey: config.apiKey,
@@ -79,6 +92,11 @@ export function createSpore(userConfig?: Partial<SporeConfig>): SporeEngine {
           `[pheromone] Loaded ${existingTrail.entries.length} trail entries`
         );
       }
+
+      // Load angle result cache
+      const cachePromptHash = hashForCache(prompt);
+      const angleCache = config.trails ? loadCache(config.trailDir) : null;
+      const cacheCtx = angleCache ? { data: angleCache, promptHash: cachePromptHash } : null;
 
       // Load approach memory and classify topic
       const useApproachMemory = config.approachMemory !== false;
@@ -161,7 +179,8 @@ export function createSpore(userConfig?: Partial<SporeConfig>): SporeEngine {
           codeContextStr,
           angleWeights,
           activeAngles,
-          generation === 0 ? customAngles : undefined
+          generation === 0 ? customAngles : undefined,
+          generation === 0 ? cacheCtx : null
         );
 
         allSpores.push(...newSpores);
@@ -264,6 +283,12 @@ export function createSpore(userConfig?: Partial<SporeConfig>): SporeEngine {
         const merged = mergeTrails(existingTrail, promptHash, entries);
         saveTrail(config.trailDir, promptHash, merged);
         if (v) console.log(`\n[pheromone] Saved ${entries.length} trail entries`);
+
+        // Save angle cache
+        if (angleCache) {
+          saveCache(config.trailDir, angleCache);
+          if (v) console.log(`[cache] Saved ${angleCache.entries.length} cached angle results`);
+        }
       }
 
       // ── Approach memory persistence ────────────────────
@@ -309,6 +334,35 @@ export function createSpore(userConfig?: Partial<SporeConfig>): SporeEngine {
           if (v) console.log(`[session-memory] Saved: ${summary.topic}`);
         } catch {
           // Silent fail — session memory is best-effort
+        }
+      }
+
+      // ── Run history persistence ──────────────────────────
+      if (config.trails) {
+        try {
+          const runHistory = loadRunHistory(config.trailDir);
+          const preflightEstimate = estimateCostFn(!!codeContext);
+          recordRun(runHistory, {
+            timestamp: Date.now(),
+            promptHash,
+            promptPreview: prompt.slice(0, 120),
+            estimatedCost: (preflightEstimate.low + preflightEstimate.high) / 2,
+            actualCost: client.costTracker.estimate(),
+            generations: generation + 1,
+            totalSpores: allSpores.length,
+            survivingSpores: allSpores.filter((s) => s.alive).length,
+            myceliumCalls: myceliumResults.length,
+            wallClockMs: Date.now() - startTime,
+            confidence: collapseResult.confidence,
+            topologyShape: collapseResult.topology.shape,
+            anglesUsed: [...new Set(allSpores.map((s) => s.angle))],
+            dominantAngle: collapseResult.topology.dominantAngle,
+            hadCodeContext: !!codeContext,
+          });
+          saveRunHistory(config.trailDir, runHistory);
+          if (v) console.log(`[run-history] Recorded run (${runHistory.runs.length} total)`);
+        } catch {
+          // Silent fail — run history is best-effort
         }
       }
 

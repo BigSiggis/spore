@@ -171,6 +171,13 @@ export interface CodeContext {
 }
 
 // ── Custom Angles ───────────────────────────────────────────────
+export const CustomAngleSchema = z.object({
+  name: z.string().min(1, "Custom angle name cannot be empty")
+    .regex(/^[a-z0-9][a-z0-9-]*$/, "Custom angle name must be lowercase kebab-case (e.g. 'my-angle')"),
+  prompt: z.string().min(10, "Custom angle prompt must be at least 10 characters"),
+  isCodeAngle: z.boolean().optional(),
+});
+
 export interface CustomAngle {
   /** Unique name for this angle (lowercase, kebab-case) */
   name: string;
