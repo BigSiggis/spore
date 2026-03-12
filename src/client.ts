@@ -301,8 +301,9 @@ export class SporeClient {
   ): AsyncGenerator<string, string, undefined> {
     await this.semaphore.acquire();
     try {
-      // Retry wrapper for stream — retries on transient errors before any chunks are yielded
+      // Retry wrapper for stream — only retry if no chunks have been yielded yet
       let lastError: unknown;
+      let hasYielded = false;
       for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
         try {
           const stream = this.client.messages.stream({
@@ -326,6 +327,7 @@ export class SporeClient {
 
             if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
               fullText += event.delta.text;
+              hasYielded = true;
               yield event.delta.text;
             }
           }
@@ -340,6 +342,8 @@ export class SporeClient {
           return fullText;
         } catch (err: any) {
           lastError = err;
+          // If we already yielded chunks to the consumer, don't retry — would cause duplicates
+          if (hasYielded) throw err;
           const status = err?.status ?? err?.statusCode;
           if (!RETRYABLE_STATUS.has(status) || attempt === MAX_RETRIES) throw err;
           const delay = BASE_DELAY_MS * Math.pow(2, attempt) + Math.random() * 500;

@@ -279,6 +279,7 @@ export async function spawnGeneration(
 }
 
 // Check early termination: if all alive spores cluster to 1 group
+// Uses all-pairs comparison to catch bipolar camps that star-topology would miss
 export function hasConverged(
   spores: Spore[],
   similarityThreshold: number
@@ -286,18 +287,19 @@ export function hasConverged(
   const alive = spores.filter((s) => s.alive);
   if (alive.length <= 2) return true;
 
-  // Quick check: are all spore vectors very similar?
-  for (let i = 1; i < alive.length; i++) {
-    let dot = 0;
-    let magA = 0;
-    let magB = 0;
-    for (let d = 0; d < alive[0].vector.length; d++) {
-      dot += alive[0].vector[d] * alive[i].vector[d];
-      magA += alive[0].vector[d] * alive[0].vector[d];
-      magB += alive[i].vector[d] * alive[i].vector[d];
+  for (let i = 0; i < alive.length; i++) {
+    for (let j = i + 1; j < alive.length; j++) {
+      let dot = 0;
+      let magA = 0;
+      let magB = 0;
+      for (let d = 0; d < alive[i].vector.length; d++) {
+        dot += alive[i].vector[d] * alive[j].vector[d];
+        magA += alive[i].vector[d] * alive[i].vector[d];
+        magB += alive[j].vector[d] * alive[j].vector[d];
+      }
+      const sim = dot / (Math.sqrt(magA) * Math.sqrt(magB) || 1);
+      if (sim < similarityThreshold) return false;
     }
-    const sim = dot / (Math.sqrt(magA) * Math.sqrt(magB) || 1);
-    if (sim < similarityThreshold) return false;
   }
 
   return true;
